@@ -1,0 +1,634 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#15191c">
+<title>ISP Abnahmeprüfung</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="ISP Abnahme">
+<script src="xlsx.full.min.js" defer></script>
+<style>
+html { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+body { margin: 0; }
+[hidden] { display: none !important; }
+/* Layout: one column field tool; sticky bar on top, sections as black bands like the paper form, J/N as large tap targets.
+   Ground colour borrows from RAL 7035 (cabinet grey). */
+:root {
+  --bg: #e6e8e6;
+  --surface: #f7f8f7;
+  --fg: #1d2328;
+  --muted: #5b6670;
+  --line: #c9cecd;
+  --band: #15191c;
+  --band-fg: #f3f5f4;
+  --accent: #1f5f8b;
+  --accent-soft: #d6e5f0;
+  --ok: #1e7a45;
+  --ok-soft: #d5ecdd;
+  --bad: #b3261e;
+  --bad-soft: #f6d9d6;
+  --font: "IBM Plex Sans", "Segoe UI", Roboto, Arial, sans-serif;
+  --mono: "IBM Plex Mono", Consolas, "Courier New", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121517; --surface: #1b2023; --fg: #e4e8ea; --muted: #97a2ab; --line: #2f373c;
+    --band: #000000; --band-fg: #e9eef0; --accent: #6fb0de; --accent-soft: #1d3446;
+    --ok: #5fc98a; --ok-soft: #173525; --bad: #f08a80; --bad-soft: #42201d; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121517; --surface: #1b2023; --fg: #e4e8ea; --muted: #97a2ab; --line: #2f373c;
+  --band: #000000; --band-fg: #e9eef0; --accent: #6fb0de; --accent-soft: #1d3446;
+  --ok: #5fc98a; --ok-soft: #173525; --bad: #f08a80; --bad-soft: #42201d; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font: 15px/1.45 var(--font); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--surface); }
+.wrap { max-width: 860px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+button, input, textarea, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+h1, h2 { margin: 0; text-wrap: balance; }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+/* top bar */
+.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line); }
+.bar .wrap { display: flex; align-items: center; gap: 12px; padding-block: 10px; min-height: 56px; }
+.bar h1 { font-size: 17px; font-weight: 700; letter-spacing: .01em; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar .sub { display: block; font-size: 12px; font-weight: 500; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 8px 14px; font-weight: 600; font-size: 14px; white-space: nowrap; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.btn.danger { color: var(--bad); }
+.btn.danger.solid { background: var(--bad); border-color: var(--bad); color: var(--surface); }
+.btn:disabled { opacity: .5; cursor: default; }
+.iconbtn { border: none; background: none; padding: 6px 8px; font-size: 20px; line-height: 1; color: var(--fg); border-radius: 8px; }
+
+main { padding-block: 20px 60px; }
+.note { font-size: 13px; color: var(--muted); }
+.banner { background: var(--accent-soft); border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-bottom: 16px; }
+
+/* list */
+.listhead { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.listhead h2 { font-size: 22px; }
+.cards { display: grid; gap: 10px; }
+.card { display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; text-align: left; width: 100%; }
+.card:hover { border-color: var(--accent); }
+.card .t { font-weight: 600; font-size: 16px; min-width: 0; overflow-wrap: anywhere; }
+.card .m { font-size: 13px; color: var(--muted); grid-column: 1; }
+.card .stat { grid-row: 1 / span 2; grid-column: 2; text-align: right; font-size: 13px; }
+.card .stat b { font-size: 18px; display: block; }
+.meter { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--line); display: flex; overflow: hidden; }
+.meter i { display: block; height: 100%; }
+.meter .j { background: var(--ok); } .meter .n { background: var(--bad); }
+.empty { background: var(--surface); border: 1px dashed var(--line); border-radius: 10px; padding: 28px 20px; text-align: center; }
+.empty p { margin: 6px 0 16px; color: var(--muted); }
+
+/* form */
+.form { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 16px; }
+.form label { display: grid; gap: 4px; font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+.form input { border: 1px solid var(--line); border-radius: 6px; padding: 9px 10px; background: var(--bg); font-size: 15px; text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--fg); min-width: 0; }
+.form .actions { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* detail */
+.summary { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; margin-bottom: 12px; font-size: 14px; }
+.summary .meter { flex: 1 0 100%; height: 8px; }
+.pill { display: inline-flex; align-items: center; gap: 6px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+.chip { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 5px 12px; font-size: 13px; font-weight: 600; }
+.chip[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 18px; }
+
+.sect { margin-bottom: 14px; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); background: var(--surface); }
+.sect > button { width: 100%; display: flex; gap: 12px; align-items: baseline; background: var(--band); color: var(--band-fg); border: none; padding: 11px 14px; text-align: left; font-weight: 700; font-size: 15px; }
+.sect > button .mono { font-weight: 600; min-width: 64px; }
+.sect > button .cnt { margin-left: auto; font-family: var(--mono); font-size: 12px; font-weight: 400; opacity: .8; white-space: nowrap; }
+.sect > button .chev { transition: transform .15s; }
+.sect.closed > button .chev { transform: rotate(-90deg); }
+.sect.closed .items { display: none; }
+
+.item { display: grid; grid-template-columns: 74px 1fr auto; gap: 4px 10px; padding: 10px 12px; border-top: 1px solid var(--line); align-items: center; }
+.item:first-child { border-top: none; }
+.item .nr { font-family: var(--mono); font-size: 12px; color: var(--muted); align-self: start; padding-top: 2px; }
+.item .tx { min-width: 0; overflow-wrap: anywhere; }
+.item .yn { display: flex; gap: 6px; }
+.yn button { width: 46px; height: 40px; border-radius: 8px; border: 1.5px solid var(--line); background: var(--bg); font-weight: 700; font-size: 15px; }
+.yn button.j[aria-pressed="true"] { background: var(--ok); border-color: var(--ok); color: var(--surface); }
+.yn button.n[aria-pressed="true"] { background: var(--bad); border-color: var(--bad); color: var(--surface); }
+.item.isN { background: var(--bad-soft); }
+.item .rm { grid-column: 2 / -1; display: flex; gap: 8px; align-items: start; }
+.item .rmbtn { border: none; background: none; color: var(--accent); font-size: 13px; font-weight: 600; padding: 2px 0; }
+.item textarea { width: 100%; min-height: 40px; border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; background: var(--surface); resize: vertical; font-size: 14px; }
+.item .rmtext { font-size: 13px; color: var(--muted); font-style: italic; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+@media (max-width: 560px) {
+  .item { grid-template-columns: 1fr auto; }
+  .item .nr { grid-column: 1 / -1; padding: 0; }
+  .item .rm { grid-column: 1 / -1; }
+}
+
+.dialog { position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.45); display: grid; place-items: center; padding: 16px; }
+.dialog > div { background: var(--surface); border-radius: 12px; padding: 20px; max-width: 420px; width: 100%; display: grid; gap: 14px; }
+.dialog .actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 8px; font-size: 14px; z-index: 30; max-width: calc(100% - 32px); }
+.save-state { font-size: 12px; color: var(--muted); white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<header class="bar"><div class="wrap" id="bar"></div></header>
+<main class="wrap" id="main"><p class="note">Lade Prüfungen …</p></main>
+<div id="overlay"></div>
+
+<script>
+// ---------- Checklist data (Anhang 7, VDI 3814-3:2007-06) ----------
+const RAW = `S|481|Automationssysteme
+481.1|Sind Stromlaufpläne nach DIN IEC 61082-1 bzw. DIN EN 61082-2 vorhanden?
+481.2|Sind Belegungspläne für Automationsstationen mit Adressierung vorhanden?
+481.3|Sind die Automationsschemata und GA-Funktionslisten je Informationsschwerpunkt vorhanden?
+481.4|Entsprechen die Start-, Steuer, Regel-Funktionen der Funktionsbeschreibung und GA-Funktionsliste (Stichproben)…
+481.5|Kommunikation zur GA-Managmentebene parametriert und funktionsfähig?
+481.6|Funktionstest : Netzersatzbetrieb und Netzwiederkehr gem. Funktionbeschreibung
+481.7|Test Brandschutzklappenfall Brandfallsteuerung gem. Vorgabe
+481.9|Test Frostschutz _______________
+481.8|Ersatzstrategie Fühlerausfall Fühler___________________
+481.XX|Weitere Auswahl, siehe _____________________
+S|482.1|Schaltschrank
+482.1.1.|CE-Kennzeichnung + Konformitätserklärung vorhanden
+482.1.2.|Schaltschranktypenschild gemäß VDE 0660-500 und Prüfprotokoll vorhanden
+482.1.3.|Messprotokolle gemäß VDE 0100-610 vorhanden
+482.1.4.|Schaltschrankfarbe g. LV, Lackierung in Ordnung
+482.1.5.|Blech in Ordnung (keine sichtbaren Unebenheiten vorh.)
+482.1.6.|Dichtung zwischen den Schaltschränken
+482.1.7.|Dichtung an der Kabeleinführung (Leitungsflanschplatten)
+482.1.8.|Dichtung am Bodenblech (Einführung durch das Bodenblech)
+482.1.9.|Dichtung an den Seitenwänden (inkl. Profilverschlüsse)
+482.1.10.|Dichtung an der Rückwand
+482.1.11.|Dichtung am Sichtfenster
+482.1.12.|Dichtung am Schaltschranklüfter vorhanden
+482.1.13.|Dichtung am Luftaustrittsgitter vorhanden
+482.1.14.|Befestigung d. Schrankes in Ordnung (einschl. Feldverbindungen)
+482.1.15.|Verschraubungen dichtschließend und zugentlastet
+482.1.16.|Nicht benötigte Einführungen sind verschlossen
+482.1.17.|Schutzart gemäß LV
+482.1.18.|Tür leichtgängig & Öffnung ohne Hauptschaltersbetätigung mögl.
+482.1.19.|Schließung in Ordnung
+482.1.20.|Türerdung in Ordnung
+482.1.21.|Seitenwände ordnungsgemäß geerdet
+482.1.22.|Dachblech ordnungsgemäß geerdet
+482.1.23.|Rahmen und Gehäuse ordnungsgemäß geerdet
+482.1.24.|Montageplatte ordnungsgemäß geerdet (PA vorhanden)
+482.1.25.|Klemmleistenschiene ordnungsgemäß geerdet
+482.1.26.|Abschirmungsklemmleiste ordnungsgemäß geerdet
+482.1.27.|Frequenz -oder Spg.sumformer ordnungsgemäß geerdet
+482.1.28.|Transformatoren ordnungsgemäß geerdet
+482.1.29.|Transformatoren sekundärseitig über Trennklemme geerdet
+482.1.30.|Netzteile ordnungsgemäß geerdet
+482.1.31.|Sonstige Geräte ordnungsgemäß geerdet
+482.1.32.|Alle Betriebsmittel mit dauerhaften Klebeschildern gekennzeichnet
+482.1.33.|Zweitbezeichnung auf der Montageplatte und Tür vorh.
+482.1.34.|Platzreserve von mindestens 20% vorhanden
+482.1.35.|Bezeichnungsschild der Herkunft der Absicherung vorh.
+482.1.36.|ISP-Bezeichnung vorhanden und in Ordnung
+482.1.37.|Geschraubte Resopalschilder für Bedienelemente vorhanden (z.B. Störquittiertaster)
+482.1.38.|AS - Beschriftung von außen vorhanden
+482.1.39.|Adernfarben gemäß RitA
+482.1.40.|Leuchtmelder mit LED (mit Lampenprüfung)
+482.1.41.|Schaltschrankbeleuchtung vorhanden
+482.1.42.|Steckdose je Schaltschrankfeld vorhanden
+482.1.43.|Schaltplantasche im ersten Feld vorhanden
+482.1.44.|Hauptschalterausführung gemäß LV
+482.1.45.|Steuertransformatoren gemäß VDE 0570 vorhanden
+482.1.46.|Steuerspannungstrafo 400/230 V sekundärseitig 0 V über Trennklemme geerdet
+482.1.47.|Steuerspannungstrafo 400/24 V sekundärseitig 0 V über Trennklemme geerdet
+482.1.48.|Betriebsmittel, die bei ausgeschaltetem Hauptschalter Spannung führen, haben Warnschilder
+482.1.49.|Fremdspannungsklemmen sind abgedeckt
+482.1.50.|Alle Adern sind verbunden (keine blanken Adern sichtbar)
+482.1.51.|Schaltschrank ist sauber
+482.1.52|Klapptisch im Feld der Automation?
+S|482.1.2.|Externe Installation
+482.2.1.|Kabelbezeichnungen gemäß RitA vorhanden
+482.2.2.|Isolation der Adern an der Klemmleiste optisch in Ordnung
+482.2.3.|Isolation der Ummantelung am Schaltschrank optisch i.O.
+482.2.4.|Abschirmungen ordnungsgemäß aufgelegt
+482.2.5.|Leitungsverlegung in M-Rohren fachgerecht ausgeführt
+482.2.6.|Leitungsverlegung auf Kabelpritschen fachgerecht ausgeführt
+482.2.7.|Leitungsdurchführungen durch Wände fachgerecht geschlossen (Brandschutz)
+482.2.8.|Leitungsdurchführungen durch Decken fachgerecht geschlossen (Brandschutz)
+482.2.9.|Isolation der Adern an den externen Bauteilen optisch i.O.
+482.2.10.|Isolation der Ummantelung an externen Bauteilen optisch i. O.
+482.2.11.|Alle benötigten Einführungen sind mit Verschraubungen versehen
+482.2.12.|Alle Verschraubungen sind fest genug angezogen
+482.2.13.|Alle nicht benötigten Einführungen sind fachgerecht geschlossen
+482.2.14.|Alle Feldgeräte haben Schilder welche den Vorgaben der RitA entsprechen
+482.2.15.|Alle Bauteile fachgerecht befestigt (Spannungsverschleppung)
+482.2.16.|Alle Fühler können ohne Leitungsdemontage aus der Hülse gezogen werden
+482.2.17.|Die Länge der Fühler ist richtig bemessen
+482.2.18.|Bei allen Kapillarfühlern ist die Kapillare fachgerecht befestigt
+482.2.19.|Bei allen Kapillarfühlern hat die Kapillare die richtige Länge
+482.2.20.|PA an der Lüftungsanlage vorhanden
+482.2.21.|PA-Brücken an der Lüftungsanlage vorhanden
+482.2.22.|Verbindung PA-Schiene/Anlage/Schaltschrank vorhanden
+482.2.23.|Klappenantriebe sind fachgerecht montiert
+482.2.24.|Endschalter sind fachgerecht montiert
+482.2.25.|Ventilantriebe sind fachgerecht montiert (Austauschbarkeit)
+482.2.26.|Pumpen sind fachgerecht montiert (Einführung nach unten)
+482.2.27.|Pumpen sind fachgerecht montiert (Einführung nach oben)
+S|482.1.3.|Stromlaufplan
+482.3.1.|Deckblatt mit allen nötigen Angaben gemäß DIN/VDE 0660-500 vorhanden
+482.3.2.|Inhaltsverzeichnis vorhanden
+482.3.3.|Inhaltsverzeichnis in Ordnung
+482.3.4.|Anlagengesamtansicht vorhanden
+482.3.5.|Anlagengesamtansicht in Ordnung
+482.3.6.|Einzelfeldansicht vorhanden
+482.3.7.|Einzelfeldansicht in Ordnung
+482.3.8.|Türaufbauplan vorhanden
+482.3.9.|Türaufbauplan in Ordnung
+482.3.10.|Montageplattenaufbauplan vorhanden
+482.3.11.|Montageplattenaufbauplan in Ordnung
+482.3.12.|Klemmenplan vorhanden
+482.3.13.|Klemmenplan in Ordnung
+482.3.14.|Kabellisten vorhanden
+482.3.15.|Kabellisten in Ordnung
+482.3.16.|Stück- und Ersatzteillisten vorhanden
+482.3.17.|Stück- und Ersatzteillisten in Ordnung
+482.3.18.|Bauteile stimmen mit dem Schaltschrank überein
+482.3.19.|Bauteilbezeichnungen stimmen mit Schaltschrank überein
+482.3.20.|Bauteildarstellung entspricht DIN
+482.3.21.|Kontaktbezeichnungen stimmen mit Schaltschrank überein
+482.3.22.|Kontaktbelegungen stimmen überein
+S|484|Raumautomationseinrichtungen
+484.1|Kommunikation zu den GA-Einrichtungen und zur Managmentebene parametriert und funktionsfähig
+484.2|Sind die Funktionen Raumluftwechselratenreduzierung in Laborgebäuden etc. gemäß Vertrag realisiert (Stichproben)
+484.3|Gefährdungskategorien eingestellt und bedienbar/verstellbar
+484.4|Bedienung je nach Gefährdungskategorie über Bediengeräte möglich (reduziert/normal) ?
+484.5|Automation behält auch nach Netzwiederkehr Betreibsart (normal/reduziert) [Remanenz]
+484.6|Sind die Bedienfunktionen im Raum gem.Vertrag realisiert (Stichproben) Auswahl siehe ________________
+484.7|Weitere Auswahl, siehe __________________
+S|489|Gebäudeautomation, sonstiges
+489.1|Sind Fachunternehmererklärungen, Errichterbescheinigungen, Gewährleistungsbescheinigungen vorhanden?
+489.2|Liegen die Wartungsanleitungen für die Anlage vor? (Keine allgemeine Ausführung der VDMA)
+489.3|Liegt das Wartungsangebot für die Anlage vor?`;
+
+const SECTIONS = [];
+const ITEMS = [];
+RAW.split("\n").forEach(line => {
+  const p = line.split("|");
+  if (p[0] === "S") SECTIONS.push({ nr: p[1], title: p[2], items: [] });
+  else {
+    const it = { key: "q" + ITEMS.length, nr: p[0], text: p[1], sect: SECTIONS.length - 1 };
+    ITEMS.push(it); SECTIONS[SECTIONS.length - 1].items.push(it);
+  }
+});
+const TOTAL = ITEMS.length;
+
+// ---------- helpers ----------
+const $ = (s, el = document) => el.querySelector(s);
+function h(tag, attrs = {}, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else if (k === "class") el.className = v;
+    else el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of kids.flat()) if (c != null && c !== false) el.append(c.nodeType ? c : String(c));
+  return el;
+}
+function toast(msg) {
+  const t = h("div", { class: "toast", role: "status" }, msg);
+  document.body.append(t); setTimeout(() => t.remove(), 2600);
+}
+function fmtDate(iso) {
+  if (!iso) return "";
+  const [y, m, d] = iso.split("-"); return d && m && y ? `${d}.${m}.${y}` : iso;
+}
+function today() { const d = new Date(); return d.toISOString().slice(0, 10); }
+function stats(p) {
+  let j = 0, n = 0; const a = p.antworten || {};
+  for (const it of ITEMS) { const v = a[it.key] && a[it.key].v; if (v === "J") j++; else if (v === "N") n++; }
+  return { j, n, open: TOTAL - j - n };
+}
+function meter(s, cls = "meter") {
+  return h("div", { class: cls, role: "img", "aria-label": `${s.j} J, ${s.n} N, ${s.open} offen` },
+    h("i", { class: "j", style: `width:${s.j / TOTAL * 100}%` }),
+    h("i", { class: "n", style: `width:${s.n / TOTAL * 100}%` }));
+}
+
+// ---------- storage: shared db, local fallback ----------
+// Local storage only: data stays in this browser on this device.
+const KEY = "isp-pruefungen";
+const state = { docs: {}, loaded: false, view: "list", openId: null, filter: "alle", closed: {}, readOnly: false, warn: "" };
+const store = {
+  init() {
+    try { state.docs = JSON.parse(localStorage.getItem(KEY) || "{}"); }
+    catch (e) { state.docs = {}; state.warn = "Der Browser-Speicher ist gesperrt (z. B. privates Fenster). Änderungen gehen beim Schließen verloren – exportiere eine Sicherung."; }
+    state.loaded = true; render();
+  },
+  save() {
+    try { localStorage.setItem(KEY, JSON.stringify(state.docs)); return true; }
+    catch (e) { return false; }
+  },
+  create(data) {
+    const id = "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const now = new Date().toISOString();
+    state.docs[id] = { id, ...data, antworten: {}, createdAt: now, updatedAt: now };
+    this.save(); return id;
+  },
+  remove(id) { delete state.docs[id]; this.save(); },
+};
+function deepMerge(t, s) { for (const [k, v] of Object.entries(s)) { if (v && typeof v === "object" && !Array.isArray(v)) { t[k] = t[k] && typeof t[k] === "object" ? t[k] : {}; deepMerge(t[k], v); } else t[k] = v; } return t; }
+
+function patchDoc(id, patch) {
+  const d = state.docs[id]; if (!d) return;
+  patch.updatedAt = new Date().toISOString();
+  deepMerge(d, JSON.parse(JSON.stringify(patch)));
+  setSaveState(store.save() ? "Gespeichert" : "Nicht gespeichert");
+}
+function setSaveState(t) { const el = $("#savestate"); if (el) el.textContent = t; }
+
+// file download (works offline, no server)
+function downloadFile(name, blob) {
+  const url = URL.createObjectURL(blob);
+  const a = h("a", { href: url, download: name });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+// backup: move inspections between devices (phone <-> PC)
+function exportBackup() {
+  const data = { app: "isp-abnahme", version: 1, exportedAt: new Date().toISOString(), pruefungen: Object.values(state.docs) };
+  downloadFile(`ISP Abnahme Sicherung ${today()}.json`, new Blob([JSON.stringify(data, null, 1)], { type: "application/json" }));
+  toast("Sicherung erstellt");
+}
+function importBackup(file) {
+  const r = new FileReader();
+  r.onload = () => {
+    let data;
+    try { data = JSON.parse(r.result); } catch (e) { toast("Die Datei ist keine gültige Sicherung."); return; }
+    const list = data && Array.isArray(data.pruefungen) ? data.pruefungen : null;
+    if (!list) { toast("Die Datei ist keine Sicherung dieser App."); return; }
+    let added = 0, updated = 0, kept = 0;
+    for (const p of list) {
+      if (!p || !p.id) continue;
+      const cur = state.docs[p.id];
+      if (!cur) { state.docs[p.id] = p; added++; }
+      else if ((p.updatedAt || "") > (cur.updatedAt || "")) { state.docs[p.id] = p; updated++; }
+      else kept++;
+    }
+    store.save(); render();
+    toast(`${added} neu, ${updated} aktualisiert, ${kept} unverändert`);
+  };
+  r.readAsText(file);
+}
+
+// ---------- views ----------
+function render(soft) {
+  if (soft && state.view === "new" && $("#f-isp")) return; // don't wipe a half-filled form on live updates
+  if (state.view === "detail" && state.docs[state.openId]) renderDetail();
+  else { state.view = state.view === "new" ? "new" : "list"; renderList(); }
+}
+
+function renderBar(left, title, sub, right) {
+  const bar = $("#bar"); bar.replaceChildren();
+  if (left) bar.append(left);
+  bar.append(h("h1", {}, h("span", { class: "sub" }, sub), title));
+  if (right) bar.append(right);
+}
+
+function renderList() {
+  renderBar(null, "ISP Abnahmeprüfung", "VDI 3814-3 · Anhang 7",
+    state.readOnly ? null : h("button", { class: "btn primary", id: "newbtn", onclick: () => { state.view = "new"; render(); } }, "+ Neue Prüfung"));
+  const main = $("#main"); main.replaceChildren();
+  if (state.warn) main.append(h("div", { class: "banner" }, state.warn));
+  if (!state.loaded) { main.append(h("p", { class: "note" }, "Lade Prüfungen …")); return; }
+  const fileIn = h("input", { type: "file", accept: ".json,application/json", id: "backup-in", hidden: true,
+    onchange: e => { const f = e.target.files[0]; if (f) importBackup(f); e.target.value = ""; } });
+  const backupBar = h("div", { class: "toolbar", style: "margin:0 0 16px" },
+    h("button", { class: "btn", onclick: exportBackup, disabled: !Object.keys(state.docs).length }, "Sicherung exportieren"),
+    h("button", { class: "btn", onclick: () => fileIn.click() }, "Sicherung importieren"), fileIn,
+    h("span", { class: "note", style: "align-self:center" }, "Gespeichert nur auf diesem Gerät. Zum Übertragen Sicherung exportieren und auf dem anderen Gerät importieren."));
+
+  if (state.view === "new") main.append(newForm());
+
+  const list = Object.values(state.docs).sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
+  main.append(h("div", { class: "listhead" }, h("h2", {}, "Prüfungen"), h("span", { class: "note mono" }, `${list.length} gespeichert · ${TOTAL} Prüfpunkte je ISP`)));
+  if (!list.length && state.view !== "new") {
+    main.append(h("div", { class: "empty" },
+      h("strong", {}, "Noch keine Prüfung angelegt"),
+      h("p", {}, "Lege für jeden Informationsschwerpunkt eine Prüfung an. Danach hakst du die Punkte mit J oder N ab."),
+      state.readOnly ? null : h("button", { class: "btn primary", onclick: () => { state.view = "new"; render(); } }, "Erste Prüfung anlegen")));
+    main.append(h("div", { style: "height:16px" }), backupBar);
+    return;
+  }
+  const cards = h("div", { class: "cards" });
+  for (const p of list) {
+    const s = stats(p);
+    cards.append(h("button", { class: "card", onclick: () => openDoc(p.id) },
+      h("span", { class: "t" }, p.isp || "ISP ohne Bezeichnung"),
+      h("span", { class: "m" }, [fmtDate(p.datum), p.pruefer].filter(Boolean).join(" · ") || "—"),
+      h("span", { class: "stat mono" }, h("b", {}, `${s.j + s.n}/${TOTAL}`), s.n ? h("span", { style: "color:var(--bad)" }, `${s.n} × N`) : "geprüft"),
+      meter(s)));
+  }
+  main.append(cards, h("div", { style: "height:16px" }), backupBar);
+}
+
+function newForm() {
+  const f = h("form", { class: "form", onsubmit: async e => {
+    e.preventDefault();
+    const isp = $("#f-isp").value.trim();
+    if (!isp) { $("#f-isp").focus(); toast("Bitte die ISP-Bezeichnung eintragen."); return; }
+    const btn = $("#f-save"); btn.disabled = true;
+    try {
+      const id = await store.create({ isp, pruefer: $("#f-pruefer").value.trim(), datum: $("#f-datum").value || today(), ort: $("#f-ort").value.trim() });
+      openDoc(id);
+    } catch (err) {
+      btn.disabled = false;
+      toast(err && err.code === "quota_exceeded" ? "Speicher voll. Lösche alte Prüfungen und versuche es erneut." : "Anlegen fehlgeschlagen. Versuche es erneut.");
+    }
+  } },
+    h("label", {}, "ISP (Klartext und Code)", h("input", { id: "f-isp", required: true, placeholder: "z. B. RLT 03 – Hörsaal Nord", autocomplete: "off" })),
+    h("label", {}, "Gebäude / Ort", h("input", { id: "f-ort", placeholder: "z. B. Geb. 101, UG Technikzentrale", autocomplete: "off" })),
+    h("label", {}, "Prüfer", h("input", { id: "f-pruefer", placeholder: "Name", autocomplete: "name" })),
+    h("label", {}, "Datum", h("input", { id: "f-datum", type: "date", value: today() })),
+    h("div", { class: "actions" },
+      h("button", { class: "btn primary", id: "f-save", type: "submit" }, "Prüfung anlegen"),
+      h("button", { class: "btn", type: "button", onclick: () => { state.view = "list"; render(); } }, "Abbrechen")));
+  setTimeout(() => { const i = $("#f-isp"); if (i) i.focus(); }, 0);
+  return f;
+}
+
+function openDoc(id) { state.view = "detail"; state.openId = id; state.built = null; render(); window.scrollTo(0, 0); }
+
+function renderDetail() {
+  const p = state.docs[state.openId];
+  // rebuild only when switching docs or filter; otherwise update in place (keeps typing focus)
+  const sig = p.id + "|" + state.filter + "|" + state.readOnly;
+  if (state.built === sig) { updateDetail(p); return; }
+  state.built = sig;
+
+  renderBar(h("button", { class: "iconbtn", "aria-label": "Zurück zur Übersicht", onclick: () => { state.view = "list"; state.built = null; render(); } }, "←"),
+    p.isp || "ISP", [fmtDate(p.datum), p.pruefer].filter(Boolean).join(" · ") || "Prüfung",
+    h("span", { class: "save-state", id: "savestate" }, state.readOnly ? "Nur lesen" : ""));
+
+  const main = $("#main"); main.replaceChildren();
+  if (state.warn) main.append(h("div", { class: "banner" }, state.warn));
+
+  // header fields
+  if (!state.readOnly) {
+    const field = (label, key, type = "text") => h("label", {}, label, h("input", { id: "d-" + key, type, value: p[key] || "",
+      onchange: e => { patchDoc(p.id, { [key]: e.target.value }); } }));
+    main.append(h("details", {}, h("summary", { class: "note", style: "cursor:pointer;margin-bottom:10px" }, "Kopfdaten bearbeiten"),
+      h("div", { class: "form" }, field("ISP (Klartext und Code)", "isp"), field("Gebäude / Ort", "ort"), field("Prüfer", "pruefer"), field("Datum", "datum", "date"))));
+  }
+
+  main.append(h("div", { class: "summary", id: "summary" }));
+  const fl = h("div", { class: "filters", role: "group", "aria-label": "Filter" });
+  [["alle", "Alle"], ["offen", "Offen"], ["N", "Mängel (N)"], ["J", "J"]].forEach(([k, l]) =>
+    fl.append(h("button", { class: "chip", "aria-pressed": String(state.filter === k), onclick: () => { state.filter = k; render(); } }, l)));
+  main.append(fl);
+
+  SECTIONS.forEach((s, si) => {
+    const sect = h("section", { class: "sect" + (state.closed[si] ? " closed" : ""), "data-s": si });
+    sect.append(h("button", { "aria-expanded": String(!state.closed[si]), onclick: e => {
+      state.closed[si] = !state.closed[si]; sect.classList.toggle("closed"); e.currentTarget.setAttribute("aria-expanded", String(!state.closed[si]));
+    } }, h("span", { class: "chev" }, "▾"), h("span", { class: "mono" }, s.nr), h("span", {}, s.title), h("span", { class: "cnt" })));
+    const items = h("div", { class: "items" });
+    s.items.forEach(it => items.append(itemRow(p, it)));
+    sect.append(items); main.append(sect);
+  });
+
+  main.append(h("div", { class: "toolbar" },
+    h("button", { class: "btn primary", onclick: () => exportXlsx(state.docs[state.openId]) }, "Als Excel exportieren"),
+    state.readOnly ? null : h("button", { class: "btn danger", onclick: () => confirmDelete(p) }, "Prüfung löschen")));
+  main.append(h("p", { class: "note", style: "margin-top:18px" }, "Quelle: VB BW Amt FR / UNI FR – Richtlinie für technische Anlagen Gebäudeautomation V2.3, Anhang 7, S. 133–135"));
+  updateDetail(p);
+}
+
+function itemRow(p, it) {
+  const row = h("div", { class: "item", "data-k": it.key });
+  const setV = v => {
+    const cur = (state.docs[p.id].antworten[it.key] || {}).v || "";
+    patchDoc(p.id, { antworten: { [it.key]: { v: cur === v ? "" : v } } });
+    updateDetail(state.docs[p.id]);
+  };
+  row.append(h("span", { class: "nr" }, it.nr), h("span", { class: "tx" }, it.text),
+    h("div", { class: "yn" },
+      h("button", { class: "j", "aria-label": `${it.nr} Ja`, disabled: state.readOnly, onclick: () => setV("J") }, "J"),
+      h("button", { class: "n", "aria-label": `${it.nr} Nein`, disabled: state.readOnly, onclick: () => setV("N") }, "N")),
+    h("div", { class: "rm" }));
+  return row;
+}
+
+function updateDetail(p) {
+  const a = p.antworten || {};
+  const s = stats(p);
+  const sum = $("#summary");
+  if (sum) sum.replaceChildren(
+    h("span", { class: "pill mono" }, h("span", { class: "dot", style: "background:var(--ok)" }), `J ${s.j}`),
+    h("span", { class: "pill mono" }, h("span", { class: "dot", style: "background:var(--bad)" }), `N ${s.n}`),
+    h("span", { class: "pill mono" }, h("span", { class: "dot", style: "background:var(--line)" }), `offen ${s.open}`),
+    h("span", { class: "note mono", style: "margin-left:auto" }, `${Math.round((s.j + s.n) / TOTAL * 100)} % geprüft`),
+    meter(s));
+  document.querySelectorAll(".sect").forEach(sec => {
+    const si = +sec.dataset.s; let done = 0, visible = 0;
+    SECTIONS[si].items.forEach(it => {
+      const v = (a[it.key] || {}).v || "", b = (a[it.key] || {}).b || "";
+      if (v) done++;
+      const row = sec.querySelector(`[data-k="${it.key}"]`);
+      const show = state.filter === "alle" || (state.filter === "offen" ? !v : v === state.filter);
+      row.hidden = !show; if (show) visible++;
+      row.classList.toggle("isN", v === "N");
+      row.querySelector(".j").setAttribute("aria-pressed", String(v === "J"));
+      row.querySelector(".n").setAttribute("aria-pressed", String(v === "N"));
+      const rm = row.querySelector(".rm"), ta = rm.querySelector("textarea");
+      if (ta) { if (document.activeElement !== ta && ta.value !== b) ta.value = b; }
+      else if (state.readOnly) rm.replaceChildren(b ? h("span", { class: "rmtext" }, b) : "");
+      else if (b || rm.dataset.open) openRemark(p.id, it, rm, b, false);
+      else if (!rm.firstChild) rm.append(h("button", { class: "rmbtn", onclick: () => { rm.dataset.open = "1"; openRemark(p.id, it, rm, "", true); } }, "+ Bemerkung"));
+    });
+    sec.querySelector(".cnt").textContent = `${done}/${SECTIONS[si].items.length}`;
+    sec.hidden = visible === 0;
+  });
+}
+
+function openRemark(id, it, rm, val, focus) {
+  let t;
+  const ta = h("textarea", { id: "rm-" + it.key, "aria-label": `Bemerkung zu ${it.nr}`, rows: 2, placeholder: "Bemerkung",
+    oninput: e => { clearTimeout(t); const v = e.target.value; t = setTimeout(() => patchDoc(id, { antworten: { [it.key]: { b: v } } }), 600); },
+    onblur: e => { clearTimeout(t); const cur = ((state.docs[id].antworten || {})[it.key] || {}).b || ""; if (e.target.value !== cur) patchDoc(id, { antworten: { [it.key]: { b: e.target.value } } }); } });
+  ta.value = val; rm.replaceChildren(ta); if (focus) ta.focus();
+}
+
+function confirmDelete(p) {
+  const ov = $("#overlay");
+  const close = () => ov.replaceChildren();
+  ov.replaceChildren(h("div", { class: "dialog", onclick: e => { if (e.target === e.currentTarget) close(); } },
+    h("div", { role: "dialog", "aria-modal": "true", "aria-labelledby": "dlg-t" },
+      h("h2", { id: "dlg-t", style: "font-size:18px" }, "Prüfung löschen?"),
+      h("p", { style: "margin:0" }, `„${p.isp}“ und alle Antworten werden auf diesem Gerät gelöscht. Das lässt sich nicht rückgängig machen, außer aus einer Sicherung.`),
+      h("div", { class: "actions" },
+        h("button", { class: "btn", onclick: close }, "Abbrechen"),
+        h("button", { class: "btn danger solid", onclick: async () => {
+          try { await store.remove(p.id); close(); state.view = "list"; state.built = null; render(); toast("Prüfung gelöscht"); }
+          catch (e) { close(); toast("Löschen fehlgeschlagen. Versuche es erneut."); }
+        } }, "Löschen")))));
+}
+
+// ---------- Excel export ----------
+async function exportXlsx(p) {
+  if (!window.XLSX) { toast("Excel-Export konnte nicht geladen werden."); return; }
+  const a = p.antworten || {}, s = stats(p);
+  const rows = [
+    ["Anhang 7 – Checkliste Leistungsfeststellung, Abnahme, Übergabe"],
+    ["Checkliste für die Abnahmeprüfung VDI 3814-3:2007-06"],
+    ["ISP", p.isp || ""], ["Gebäude / Ort", p.ort || ""], ["Prüfer", p.pruefer || ""], ["Datum", fmtDate(p.datum)],
+    [],
+    ["Nr.", "Prüfpunkt", "J", "N", "Bemerkungen"],
+  ];
+  SECTIONS.forEach(sec => {
+    rows.push([sec.nr, sec.title.toUpperCase()]);
+    sec.items.forEach(it => { const x = a[it.key] || {}; rows.push([it.nr, it.text, x.v === "J" ? "x" : "", x.v === "N" ? "x" : "", x.b || ""]); });
+  });
+  rows.push([], ["Prüfpunkte gesamt", TOTAL], ["davon J", s.j], ["davon N", s.n], ["offen", s.open]);
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws["!cols"] = [{ wch: 18 }, { wch: 75 }, { wch: 5 }, { wch: 5 }, { wch: 45 }];
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Checkliste");
+  const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+  const name = `ISP Abnahme ${(p.isp || "ISP").replace(/[\\/:*?"<>|]+/g, "-")} ${p.datum || today()}.xlsx`;
+  downloadFile(name, new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+  toast("Excel-Datei erstellt");
+}
+
+render();
+store.init();
+
+// ---------- PWA: offline cache, protected storage, update notice ----------
+if ("serviceWorker" in navigator && location.protocol === "https:") {
+  navigator.serviceWorker.register("sw.js").then(reg => {
+    reg.addEventListener("updatefound", () => {
+      const w = reg.installing;
+      w && w.addEventListener("statechange", () => {
+        if (w.state === "installed" && navigator.serviceWorker.controller) {
+          const t = h("div", { class: "toast", role: "status" }, "Neue Version verfügbar. ",
+            h("button", { class: "btn", style: "margin-left:8px;padding:4px 10px", onclick: () => location.reload() }, "Neu laden"));
+          document.body.append(t);
+        }
+      });
+    });
+  }).catch(() => {});
+}
+if (navigator.storage && navigator.storage.persist) {
+  navigator.storage.persisted().then(p => { if (!p) navigator.storage.persist().catch(() => {}); }).catch(() => {});
+}
+</script>
+</body>
+</html>
