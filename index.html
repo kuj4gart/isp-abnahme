@@ -12,7 +12,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="ISP Abnahme">
-<script src="xlsx.full.min.js" defer></script>
+<script src="exceljs.min.js" defer></script>
 <style>
 html { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
 body { margin: 0; }
@@ -81,13 +81,16 @@ main { padding-block: 20px 60px; }
 .cards { display: grid; gap: 10px; }
 .card { display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; text-align: left; width: 100%; }
 .card:hover { border-color: var(--accent); }
+.cardrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.delbtn { width: 48px; border: 1px solid var(--line); background: var(--surface); border-radius: 10px; color: var(--muted); display: grid; place-items: center; }
+.delbtn:hover { color: var(--bad); border-color: var(--bad); background: var(--bad-soft); }
 .card .t { font-weight: 600; font-size: 16px; min-width: 0; overflow-wrap: anywhere; }
 .card .m { font-size: 13px; color: var(--muted); grid-column: 1; }
 .card .stat { grid-row: 1 / span 2; grid-column: 2; text-align: right; font-size: 13px; }
 .card .stat b { font-size: 18px; display: block; }
 .meter { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--line); display: flex; overflow: hidden; }
 .meter i { display: block; height: 100%; }
-.meter .j { background: var(--ok); } .meter .n { background: var(--bad); }
+.meter .j { background: var(--ok); } .meter .n { background: var(--bad); } .meter .e { background: var(--muted); }
 .empty { background: var(--surface); border: 1px dashed var(--line); border-radius: 10px; padding: 28px 20px; text-align: center; }
 .empty p { margin: 6px 0 16px; color: var(--muted); }
 
@@ -123,8 +126,13 @@ main { padding-block: 20px 60px; }
 .yn button { width: 46px; height: 40px; border-radius: 8px; border: 1.5px solid var(--line); background: var(--bg); font-weight: 700; font-size: 15px; }
 .yn button.j[aria-pressed="true"] { background: var(--ok); border-color: var(--ok); color: var(--surface); }
 .yn button.n[aria-pressed="true"] { background: var(--bad); border-color: var(--bad); color: var(--surface); }
+.yn button.e { width: 58px; font-size: 13px; }
+.yn button.e[aria-pressed="true"] { background: var(--muted); border-color: var(--muted); color: var(--surface); }
 .item.isN { background: var(--bad-soft); }
+.item.isE .tx { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--line); }
 .item .rm { grid-column: 2 / -1; display: flex; gap: 8px; align-items: start; }
+.item .meta { grid-column: 2 / -1; font-family: var(--mono); font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.item .meta:empty { display: none; }
 .item .rmbtn { border: none; background: none; color: var(--accent); font-size: 13px; font-weight: 600; padding: 2px 0; }
 .item textarea { width: 100%; min-height: 40px; border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; background: var(--surface); resize: vertical; font-size: 14px; }
 .item .rmtext { font-size: 13px; color: var(--muted); font-style: italic; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -132,7 +140,7 @@ main { padding-block: 20px 60px; }
 @media (max-width: 560px) {
   .item { grid-template-columns: 1fr auto; }
   .item .nr { grid-column: 1 / -1; padding: 0; }
-  .item .rm { grid-column: 1 / -1; }
+  .item .rm, .item .meta { grid-column: 1 / -1; }
 }
 
 .dialog { position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.45); display: grid; place-items: center; padding: 16px; }
@@ -289,6 +297,7 @@ RAW.split("\n").forEach(line => {
   }
 });
 const TOTAL = ITEMS.length;
+const LABEL = { J: "J", N: "N", E: "entfällt" };
 
 // ---------- helpers ----------
 const $ = (s, el = document) => el.querySelector(s);
@@ -314,13 +323,15 @@ function fmtDate(iso) {
 function today() { const d = new Date(); return d.toISOString().slice(0, 10); }
 function stats(p) {
   let j = 0, n = 0; const a = p.antworten || {};
-  for (const it of ITEMS) { const v = a[it.key] && a[it.key].v; if (v === "J") j++; else if (v === "N") n++; }
-  return { j, n, open: TOTAL - j - n };
+  let e = 0;
+  for (const it of ITEMS) { const v = a[it.key] && a[it.key].v; if (v === "J") j++; else if (v === "N") n++; else if (v === "E") e++; }
+  return { j, n, e, done: j + n + e, open: TOTAL - j - n - e };
 }
 function meter(s, cls = "meter") {
-  return h("div", { class: cls, role: "img", "aria-label": `${s.j} J, ${s.n} N, ${s.open} offen` },
+  return h("div", { class: cls, role: "img", "aria-label": `${s.j} J, ${s.n} N, ${s.e} entfällt, ${s.open} offen` },
     h("i", { class: "j", style: `width:${s.j / TOTAL * 100}%` }),
-    h("i", { class: "n", style: `width:${s.n / TOTAL * 100}%` }));
+    h("i", { class: "n", style: `width:${s.n / TOTAL * 100}%` }),
+    h("i", { class: "e", style: `width:${s.e / TOTAL * 100}%` }));
 }
 
 // ---------- storage: shared db, local fallback ----------
@@ -404,9 +415,45 @@ function renderBar(left, title, sub, right) {
   if (right) bar.append(right);
 }
 
+// ---------- user name: set once per device, stamped on every answer ----------
+const USER_KEY = "isp-benutzer";
+function getUser() { try { return localStorage.getItem(USER_KEY) || state.userMem || ""; } catch (e) { return state.userMem || ""; } }
+function setUser(n) { state.userMem = n; try { localStorage.setItem(USER_KEY, n); } catch (e) {} }
+function fmtTs(iso) {
+  if (!iso) return "";
+  const d = new Date(iso); if (isNaN(d)) return "";
+  return d.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+function userDialog(after) {
+  const ov = $("#overlay");
+  const close = () => ov.replaceChildren();
+  const inp = h("input", { id: "u-name", value: getUser(), placeholder: "Vor- und Nachname", autocomplete: "name",
+    style: "border:1px solid var(--line);border-radius:6px;padding:9px 10px;background:var(--bg);font-size:15px;width:100%" });
+  const save = e => {
+    e.preventDefault();
+    const n = inp.value.trim();
+    if (!n) { inp.focus(); return; }
+    setUser(n); close(); toast(`Benutzer: ${n}`);
+    if (state.view === "list" || state.view === "new") render();
+    if (after) after();
+  };
+  ov.replaceChildren(h("div", { class: "dialog", onclick: e => { if (e.target === e.currentTarget) close(); } },
+    h("form", { role: "dialog", "aria-modal": "true", "aria-labelledby": "u-t", onsubmit: save },
+      h("h2", { id: "u-t", style: "font-size:18px" }, "Benutzername"),
+      h("p", { style: "margin:0", class: "note" }, "Wird mit Datum und Uhrzeit bei jeder Antwort gespeichert. Gilt für dieses Gerät, bis du ihn änderst."),
+      inp,
+      h("div", { class: "actions" },
+        h("button", { class: "btn", type: "button", onclick: close }, "Abbrechen"),
+        h("button", { class: "btn primary", type: "submit" }, "Speichern")))));
+  setTimeout(() => inp.focus(), 0);
+}
+
 function renderList() {
+  const u = getUser();
   renderBar(null, "ISP Abnahmeprüfung", "VDI 3814-3 · Anhang 7",
-    state.readOnly ? null : h("button", { class: "btn primary", id: "newbtn", onclick: () => { state.view = "new"; render(); } }, "+ Neue Prüfung"));
+    h("div", { style: "display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end" },
+      h("button", { class: "btn", id: "userbtn", title: "Benutzername festlegen", onclick: () => userDialog() }, u ? `Benutzer: ${u}` : "Benutzer festlegen"),
+      state.readOnly ? null : h("button", { class: "btn primary", id: "newbtn", onclick: () => { state.view = "new"; render(); } }, "+ Neue Prüfung")));
   const main = $("#main"); main.replaceChildren();
   if (state.warn) main.append(h("div", { class: "banner" }, state.warn));
   if (!state.loaded) { main.append(h("p", { class: "note" }, "Lade Prüfungen …")); return; }
@@ -417,6 +464,7 @@ function renderList() {
     h("button", { class: "btn", onclick: () => fileIn.click() }, "Sicherung importieren"), fileIn,
     h("span", { class: "note", style: "align-self:center" }, "Gespeichert nur auf diesem Gerät. Zum Übertragen Sicherung exportieren und auf dem anderen Gerät importieren."));
 
+  if (!u) main.append(h("div", { class: "banner" }, "Lege oben über „Benutzer festlegen“ deinen Namen fest. Er wird mit Zeitstempel bei jeder Antwort gespeichert."));
   if (state.view === "new") main.append(newForm());
 
   const list = Object.values(state.docs).sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
@@ -432,11 +480,15 @@ function renderList() {
   const cards = h("div", { class: "cards" });
   for (const p of list) {
     const s = stats(p);
-    cards.append(h("button", { class: "card", onclick: () => openDoc(p.id) },
-      h("span", { class: "t" }, p.isp || "ISP ohne Bezeichnung"),
-      h("span", { class: "m" }, [fmtDate(p.datum), p.pruefer].filter(Boolean).join(" · ") || "—"),
-      h("span", { class: "stat mono" }, h("b", {}, `${s.j + s.n}/${TOTAL}`), s.n ? h("span", { style: "color:var(--bad)" }, `${s.n} × N`) : "geprüft"),
-      meter(s)));
+    const del = h("button", { class: "delbtn", "aria-label": `Prüfung ${p.isp || ""} löschen`, title: "Prüfung löschen", onclick: () => confirmDelete(p) });
+    del.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg>';
+    cards.append(h("div", { class: "cardrow" },
+      h("button", { class: "card", onclick: () => openDoc(p.id) },
+        h("span", { class: "t" }, p.isp || "ISP ohne Bezeichnung"),
+        h("span", { class: "m" }, [fmtDate(p.datum), p.pruefer].filter(Boolean).join(" · ") || "—"),
+        h("span", { class: "stat mono" }, h("b", {}, `${s.done}/${TOTAL}`), s.n ? h("span", { style: "color:var(--bad)" }, `${s.n} × N`) : "geprüft"),
+        meter(s)),
+      state.readOnly ? null : del));
   }
   main.append(cards, h("div", { style: "height:16px" }), backupBar);
 }
@@ -457,7 +509,7 @@ function newForm() {
   } },
     h("label", {}, "ISP (Klartext und Code)", h("input", { id: "f-isp", required: true, placeholder: "z. B. RLT 03 – Hörsaal Nord", autocomplete: "off" })),
     h("label", {}, "Gebäude / Ort", h("input", { id: "f-ort", placeholder: "z. B. Geb. 101, UG Technikzentrale", autocomplete: "off" })),
-    h("label", {}, "Prüfer", h("input", { id: "f-pruefer", placeholder: "Name", autocomplete: "name" })),
+    h("label", {}, "Prüfer", h("input", { id: "f-pruefer", placeholder: "Name", autocomplete: "name", value: getUser() })),
     h("label", {}, "Datum", h("input", { id: "f-datum", type: "date", value: today() })),
     h("div", { class: "actions" },
       h("button", { class: "btn primary", id: "f-save", type: "submit" }, "Prüfung anlegen"),
@@ -492,7 +544,7 @@ function renderDetail() {
 
   main.append(h("div", { class: "summary", id: "summary" }));
   const fl = h("div", { class: "filters", role: "group", "aria-label": "Filter" });
-  [["alle", "Alle"], ["offen", "Offen"], ["N", "Mängel (N)"], ["J", "J"]].forEach(([k, l]) =>
+  [["alle", "Alle"], ["offen", "Offen"], ["N", "Mängel (N)"], ["J", "J"], ["E", "Entfällt"]].forEach(([k, l]) =>
     fl.append(h("button", { class: "chip", "aria-pressed": String(state.filter === k), onclick: () => { state.filter = k; render(); } }, l)));
   main.append(fl);
 
@@ -516,14 +568,18 @@ function renderDetail() {
 function itemRow(p, it) {
   const row = h("div", { class: "item", "data-k": it.key });
   const setV = v => {
+    const user = getUser();
+    if (!user) { userDialog(() => setV(v)); return; }
     const cur = (state.docs[p.id].antworten[it.key] || {}).v || "";
-    patchDoc(p.id, { antworten: { [it.key]: { v: cur === v ? "" : v } } });
+    patchDoc(p.id, { antworten: { [it.key]: { v: cur === v ? "" : v, t: new Date().toISOString(), u: user } } });
     updateDetail(state.docs[p.id]);
   };
   row.append(h("span", { class: "nr" }, it.nr), h("span", { class: "tx" }, it.text),
     h("div", { class: "yn" },
       h("button", { class: "j", "aria-label": `${it.nr} Ja`, disabled: state.readOnly, onclick: () => setV("J") }, "J"),
-      h("button", { class: "n", "aria-label": `${it.nr} Nein`, disabled: state.readOnly, onclick: () => setV("N") }, "N")),
+      h("button", { class: "n", "aria-label": `${it.nr} Nein`, disabled: state.readOnly, onclick: () => setV("N") }, "N"),
+      h("button", { class: "e", "aria-label": `${it.nr} entfällt`, title: "Prüfpunkt entfällt", disabled: state.readOnly, onclick: () => setV("E") }, "entf.")),
+    h("div", { class: "meta" }),
     h("div", { class: "rm" }));
   return row;
 }
@@ -535,8 +591,9 @@ function updateDetail(p) {
   if (sum) sum.replaceChildren(
     h("span", { class: "pill mono" }, h("span", { class: "dot", style: "background:var(--ok)" }), `J ${s.j}`),
     h("span", { class: "pill mono" }, h("span", { class: "dot", style: "background:var(--bad)" }), `N ${s.n}`),
+    h("span", { class: "pill mono" }, h("span", { class: "dot", style: "background:var(--muted)" }), `entfällt ${s.e}`),
     h("span", { class: "pill mono" }, h("span", { class: "dot", style: "background:var(--line)" }), `offen ${s.open}`),
-    h("span", { class: "note mono", style: "margin-left:auto" }, `${Math.round((s.j + s.n) / TOTAL * 100)} % geprüft`),
+    h("span", { class: "note mono", style: "margin-left:auto" }, `${Math.round(s.done / TOTAL * 100)} % geprüft`),
     meter(s));
   document.querySelectorAll(".sect").forEach(sec => {
     const si = +sec.dataset.s; let done = 0, visible = 0;
@@ -549,6 +606,11 @@ function updateDetail(p) {
       row.classList.toggle("isN", v === "N");
       row.querySelector(".j").setAttribute("aria-pressed", String(v === "J"));
       row.querySelector(".n").setAttribute("aria-pressed", String(v === "N"));
+      row.querySelector(".e").setAttribute("aria-pressed", String(v === "E"));
+      row.classList.toggle("isE", v === "E");
+      const x = a[it.key] || {};
+      row.querySelector(".meta").textContent = v && (x.t || x.u)
+        ? [LABEL[v], fmtTs(x.t), x.u].filter(Boolean).join(" · ") : "";
       const rm = row.querySelector(".rm"), ta = rm.querySelector("textarea");
       if (ta) { if (document.activeElement !== ta && ta.value !== b) ta.value = b; }
       else if (state.readOnly) rm.replaceChildren(b ? h("span", { class: "rmtext" }, b) : "");
@@ -585,27 +647,140 @@ function confirmDelete(p) {
 
 // ---------- Excel export ----------
 async function exportXlsx(p) {
-  if (!window.XLSX) { toast("Excel-Export konnte nicht geladen werden."); return; }
+  if (!window.ExcelJS) { toast("Excel-Export konnte nicht geladen werden."); return; }
+  try {
+    const buf = await buildWorkbook(p);
+    const name = `ISP Abnahme ${(p.isp || "ISP").replace(/[\\/:*?"<>|]+/g, "-")} ${p.datum || today()}.xlsx`;
+    downloadFile(name, new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    toast("Excel-Datei erstellt");
+  } catch (e) { toast("Export fehlgeschlagen: " + (e && e.message || e)); }
+}
+
+async function buildWorkbook(p) {
   const a = p.antworten || {}, s = stats(p);
-  const rows = [
-    ["Anhang 7 – Checkliste Leistungsfeststellung, Abnahme, Übergabe"],
-    ["Checkliste für die Abnahmeprüfung VDI 3814-3:2007-06"],
-    ["ISP", p.isp || ""], ["Gebäude / Ort", p.ort || ""], ["Prüfer", p.pruefer || ""], ["Datum", fmtDate(p.datum)],
-    [],
-    ["Nr.", "Prüfpunkt", "J", "N", "Bemerkungen"],
-  ];
-  SECTIONS.forEach(sec => {
-    rows.push([sec.nr, sec.title.toUpperCase()]);
-    sec.items.forEach(it => { const x = a[it.key] || {}; rows.push([it.nr, it.text, x.v === "J" ? "x" : "", x.v === "N" ? "x" : "", x.b || ""]); });
+  const C = { band: "FF15191C", head: "FF3A444C", white: "FFFFFFFF", line: "FFC9CECD", zebra: "FFF4F6F5", label: "FFE6E8E6",
+    ok: "FF1E7A45", okSoft: "FFD5ECDD", bad: "FFB3261E", badSoft: "FFF6D9D6", muted: "FF5B6670", mutedSoft: "FFE3E6E8", accent: "FF1F5F8B" };
+  const F = "Arial";
+  const fill = c => ({ type: "pattern", pattern: "solid", fgColor: { argb: c } });
+  const thin = { style: "thin", color: { argb: C.line } };
+  const box = { top: thin, left: thin, bottom: thin, right: thin };
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = getUser() || "ISP Abnahme App"; wb.created = new Date();
+  const ws = wb.addWorksheet("Checkliste", {
+    views: [{ state: "frozen", ySplit: 10, showGridLines: false }],
+    pageSetup: { paperSize: 9, orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0,
+      margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.6, header: 0.2, footer: 0.3 }, printTitlesRow: "10:10" },
+    headerFooter: { oddFooter: `&L&8${(p.isp || "").replace(/&/g, "&&")} · Abnahmeprüfung VDI 3814-3&R&8Seite &P von &N` },
   });
-  rows.push([], ["Prüfpunkte gesamt", TOTAL], ["davon J", s.j], ["davon N", s.n], ["offen", s.open]);
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws["!cols"] = [{ wch: 18 }, { wch: 75 }, { wch: 5 }, { wch: 5 }, { wch: 45 }];
-  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Checkliste");
-  const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-  const name = `ISP Abnahme ${(p.isp || "ISP").replace(/[\\/:*?"<>|]+/g, "-")} ${p.datum || today()}.xlsx`;
-  downloadFile(name, new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
-  toast("Excel-Datei erstellt");
+  ws.columns = [{ width: 16 }, { width: 62 }, { width: 6 }, { width: 6 }, { width: 9 }, { width: 40 }, { width: 17 }, { width: 22 }];
+  const cols = ["A", "B", "C", "D", "E", "F", "G", "H"];
+
+  // title band
+  ws.mergeCells("A1:H1");
+  Object.assign(ws.getCell("A1"), { value: "Abnahmeprüfung Gebäudeautomation – Checkliste Anhang 7" });
+  ws.getCell("A1").font = { name: F, size: 15, bold: true, color: { argb: C.white } };
+  ws.getCell("A1").alignment = { vertical: "middle", indent: 1 };
+  ws.getRow(1).height = 30;
+  ws.mergeCells("A2:H2");
+  ws.getCell("A2").value = "Leistungsfeststellung, Abnahme, Übergabe · VDI 3814-3:2007-06";
+  ws.getCell("A2").font = { name: F, size: 10, color: { argb: C.white } };
+  ws.getCell("A2").alignment = { vertical: "middle", indent: 1 };
+  ws.getRow(2).height = 18;
+  cols.forEach(c => { ws.getCell(c + "1").fill = fill(C.band); ws.getCell(c + "2").fill = fill(C.band); });
+
+  // header data (left) and summary (right)
+  const info = [["ISP", p.isp || ""], ["Gebäude / Ort", p.ort || ""], ["Prüfer", p.pruefer || ""], ["Datum", fmtDate(p.datum)], ["Export", fmtTs(new Date().toISOString())]];
+  info.forEach(([k, v], i) => {
+    const r = 4 + i;
+    ws.mergeCells(`B${r}:E${r}`);
+    const kc = ws.getCell("A" + r), vc = ws.getCell("B" + r);
+    kc.value = k; kc.font = { name: F, size: 10, bold: true, color: { argb: C.muted } }; kc.fill = fill(C.label);
+    vc.value = v; vc.font = { name: F, size: 11, bold: i === 0 };
+    ["A", "B", "C", "D", "E"].forEach(c => ws.getCell(c + r).border = box);
+    kc.alignment = vc.alignment = { vertical: "middle", indent: 1 };
+    ws.getRow(r).height = 18;
+  });
+
+  const first = 11; // first data row after header row 10
+  const rowsTotal = SECTIONS.reduce((n, sec) => n + 1 + sec.items.length, 0);
+  const last = first + rowsTotal - 1;
+  const sum = [
+    ["J – in Ordnung", `COUNTIF(C${first}:C${last},"X")`, s.j, C.okSoft, C.ok],
+    ["N – Mangel", `COUNTIF(D${first}:D${last},"X")`, s.n, C.badSoft, C.bad],
+    ["entfällt", `COUNTIF(E${first}:E${last},"X")`, s.e, C.mutedSoft, C.muted],
+    ["offen", `${TOTAL}-H4-H5-H6`, s.open, C.label, C.muted],
+    ["Fortschritt", `IF(${TOTAL}=0,0,(H4+H5+H6)/${TOTAL})`, s.done / TOTAL, C.label, C.accent],
+  ];
+  sum.forEach(([k, f, res, bg, fg], i) => {
+    const r = 4 + i, kc = ws.getCell("G" + r), vc = ws.getCell("H" + r);
+    kc.value = k; kc.font = { name: F, size: 10, bold: true, color: { argb: fg } }; kc.fill = fill(bg);
+    vc.value = { formula: f, result: res }; vc.font = { name: F, size: 11, bold: true, color: { argb: fg } };
+    vc.alignment = { horizontal: "right", vertical: "middle", indent: 1 }; kc.alignment = { vertical: "middle", indent: 1 };
+    if (i === 4) vc.numFmt = "0%";
+    kc.border = vc.border = box;
+  });
+
+  // table header
+  const hr = ws.getRow(10);
+  hr.values = ["Nr.", "Prüfpunkt", "J", "N", "entfällt", "Bemerkungen", "Geprüft am", "Geprüft von"];
+  hr.height = 22;
+  hr.eachCell(c => {
+    c.font = { name: F, size: 10, bold: true, color: { argb: C.white } }; c.fill = fill(C.head); c.border = box;
+    c.alignment = { vertical: "middle", horizontal: ["C", "D", "E"].includes(c.address.replace(/\d+/, "")) ? "center" : "left", indent: 0 };
+  });
+
+  // rows
+  const lines = (txt, w) => String(txt || "").split("\n").reduce((n, l) => n + Math.max(1, Math.ceil(l.length / (w * 0.92))), 0);
+  // keep item numbers as text: as numbers a German Excel would show "481,1"
+  const nrVal = nr => nr;
+  let r = first, zebra = false;
+  SECTIONS.forEach(sec => {
+    const row = ws.getRow(r);
+    row.getCell(1).value = nrVal(sec.nr); row.getCell(2).value = sec.title;
+    row.getCell(1).alignment = { horizontal: "left" };
+    ws.mergeCells(`B${r}:H${r}`);
+    cols.forEach(c => { const x = ws.getCell(c + r); x.fill = fill(C.band); x.font = { name: F, size: 10.5, bold: true, color: { argb: C.white } }; x.alignment = { vertical: "middle", horizontal: "left" }; });
+    row.height = 20; r++; zebra = false;
+    sec.items.forEach(it => {
+      const x = a[it.key] || {}, v = x.v || "";
+      const row = ws.getRow(r);
+      row.values = [nrVal(it.nr), it.text, v === "J" ? "X" : "", v === "N" ? "X" : "", v === "E" ? "X" : "", x.b || "", v ? fmtTs(x.t) : "", v ? (x.u || "") : ""];
+      const bg = v === "N" ? C.badSoft : (zebra ? C.zebra : C.white);
+      cols.forEach((c, ci) => {
+        const cell = ws.getCell(c + r);
+        cell.border = box; cell.fill = fill(bg);
+        cell.font = { name: F, size: 10, color: { argb: v === "E" && ci <= 1 ? C.muted : "FF1D2328" } };
+        cell.alignment = { vertical: "top", horizontal: ci === 0 ? "left" : undefined, wrapText: ci === 1 || ci === 5 };
+      });
+      ws.getCell("A" + r).font = { name: F, size: 9, color: { argb: C.muted } };
+      [["C", "J", C.ok, C.okSoft], ["D", "N", C.bad, C.badSoft], ["E", "E", C.muted, C.mutedSoft]].forEach(([c, key, fg, bgc]) => {
+        const cell = ws.getCell(c + r);
+        cell.alignment = { horizontal: "center", vertical: "top" };
+        if (v === key) { cell.fill = fill(fg); cell.font = { name: F, size: 10, bold: true, color: { argb: C.white } }; }
+      });
+      ["G", "H"].forEach(c => ws.getCell(c + r).font = { name: F, size: 9, color: { argb: C.muted } });
+      row.height = Math.max(16, 13 * Math.max(lines(it.text, 62), lines(x.b, 40)) + 4);
+      r++; zebra = !zebra;
+    });
+  });
+
+  // signature block
+  r += 2;
+  ws.getCell("A" + r).value = "Bestätigung";
+  ws.getCell("A" + r).font = { name: F, size: 11, bold: true };
+  r += 3;
+  [["B", "Ort, Datum"], ["F", "Unterschrift Prüfer"]].forEach(([c, t]) => {
+    const cell = ws.getCell(c + r);
+    cell.value = t; cell.font = { name: F, size: 9, color: { argb: C.muted } };
+    cell.border = { top: { style: "thin", color: { argb: "FF1D2328" } } };
+  });
+  ws.mergeCells(`F${r}:H${r}`);
+  r += 2;
+  ws.getCell("A" + r).value = "Quelle: VB BW Amt FR / UNI FR – Richtlinie für technische Anlagen Gebäudeautomation V2.3, Anhang 7, S. 133–135";
+  ws.getCell("A" + r).font = { name: F, size: 8, italic: true, color: { argb: C.muted } };
+
+  return wb.xlsx.writeBuffer();
 }
 
 render();
