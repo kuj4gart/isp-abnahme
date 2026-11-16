@@ -1,6 +1,6 @@
 // Offline cache for ISP Abnahmeprüfung.
 // Bump VERSION (here AND APP_VERSION in index.html) whenever any file changes.
-const VERSION = "v6";
+const VERSION = "v8";
 const CACHE = "isp-abnahme-" + VERSION;
 const FILES = [
   "./",
