@@ -1,6 +1,6 @@
 // Offline cache for ISP Abnahmeprüfung.
-// Bump VERSION whenever any file changes so devices pick up the update.
-const VERSION = "v4";
+// Bump VERSION (here AND APP_VERSION in index.html) whenever any file changes.
+const VERSION = "v6";
 const CACHE = "isp-abnahme-" + VERSION;
 const FILES = [
   "./",
@@ -14,7 +14,8 @@ const FILES = [
 ];
 
 self.addEventListener("install", e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)));
+  // activate the new version right away instead of waiting for every window to close
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES.map(f => new Request(f, { cache: "reload" })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", e => {
@@ -25,16 +26,32 @@ self.addEventListener("activate", e => {
   );
 });
 
-// Cache first: the app opens instantly and works without network.
-// Updates arrive through a new VERSION (new sw.js), which re-downloads everything.
+function timeout(ms) { return new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), ms)); }
+
 self.addEventListener("fetch", e => {
   if (e.request.method !== "GET") return;
   const url = new URL(e.request.url);
   if (url.origin !== location.origin) return;
+
+  // The page itself: network first (always the newest version when online),
+  // fall back to the cache when offline or the network is too slow.
+  if (e.request.mode === "navigate") {
+    e.respondWith(
+      Promise.race([fetch(e.request, { cache: "no-store" }), timeout(4000)])
+        .then(res => {
+          if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put("./index.html", copy)); }
+          return res;
+        })
+        .catch(() => caches.match("./index.html").then(hit => hit || caches.match("./")))
+    );
+    return;
+  }
+
+  // Library and icons: cache first (large, rarely change; refreshed with each VERSION).
   e.respondWith(
     caches.match(e.request, { ignoreSearch: true }).then(hit => hit || fetch(e.request).then(res => {
       if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); }
       return res;
-    }).catch(() => caches.match("./index.html")))
+    }))
   );
 });

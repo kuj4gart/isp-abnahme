@@ -297,6 +297,16 @@ RAW.split("\n").forEach(line => {
   }
 });
 const TOTAL = ITEMS.length;
+// Change history: newest first. APP_VERSION must match VERSION in sw.js.
+const CHANGELOG = [
+  { v: "v6", d: "16.11.2026", items: ["Versionsnummer oben in der App", "Änderungsliste: zeigt, was jede Version gebracht hat", "Nach einem Update wird einmal angezeigt, was neu ist"] },
+  { v: "v5", d: "16.11.2026", items: ["Updates werden sofort aktiv, die App lädt sich selbst neu", "Mit Internet wird immer die neueste Version geladen"] },
+  { v: "v4", d: "16.11.2026", items: ["Prüfungen direkt in der Übersicht löschen (Mülleimer-Knopf)"] },
+  { v: "v3", d: "16.11.2026", items: ["Zeitstempel und Benutzername bei jeder Antwort", "Benutzername einmal pro Gerät festlegen", "Excel-Export neu gestaltet: Farben, Zusammenfassung, Unterschriftsfeld, Druck A4 quer", "Excel-Spalten „Geprüft am“ und „Geprüft von“"] },
+  { v: "v2", d: "16.11.2026", items: ["Neue Antwort „entfällt“ neben J und N", "Filter „Entfällt“ und Spalte „entfällt“ im Excel-Export"] },
+  { v: "v1", d: "16.11.2026", items: ["Erste Version: 121 Prüfpunkte nach VDI 3814-3, Anhang 7", "J/N, Bemerkungen, Filter, Fortschritt", "Excel-Export, Sicherung exportieren/importieren, offline nutzbar"] },
+];
+const APP_VERSION = CHANGELOG[0].v;
 const LABEL = { J: "J", N: "N", E: "entfällt" };
 
 // ---------- helpers ----------
@@ -448,9 +458,36 @@ function userDialog(after) {
   setTimeout(() => inp.focus(), 0);
 }
 
+// ---------- version / change history ----------
+function changelogDialog(sinceVersion) {
+  const ov = $("#overlay");
+  const close = () => ov.replaceChildren();
+  // after an update: only the versions newer than the one seen last
+  let entries = CHANGELOG;
+  if (sinceVersion) { const i = CHANGELOG.findIndex(c => c.v === sinceVersion); if (i > 0) entries = CHANGELOG.slice(0, i); }
+  const list = h("div", { style: "display:grid;gap:14px;max-height:60vh;overflow:auto" },
+    entries.map((c, i) => h("div", {},
+      h("div", { style: "display:flex;gap:8px;align-items:baseline" },
+        h("strong", { class: "mono" }, c.v), h("span", { class: "note" }, c.d),
+        i === 0 && !sinceVersion ? h("span", { class: "note", style: "margin-left:auto" }, "installiert") : null),
+      h("ul", { style: "margin:4px 0 0;padding-left:20px" }, c.items.map(t => h("li", {}, t))))));
+  ov.replaceChildren(h("div", { class: "dialog", onclick: e => { if (e.target === e.currentTarget) close(); } },
+    h("div", { role: "dialog", "aria-modal": "true", "aria-labelledby": "cl-t" },
+      h("h2", { id: "cl-t", style: "font-size:18px" }, sinceVersion ? `Neu in ${APP_VERSION}` : "Änderungen"),
+      list,
+      h("div", { class: "actions" }, h("button", { class: "btn primary", onclick: close }, "OK")))));
+}
+function checkWhatsNew() {
+  let seen = null;
+  try { seen = localStorage.getItem("isp-version"); localStorage.setItem("isp-version", APP_VERSION); } catch (e) { return; }
+  // show once after an update; not on the very first start
+  if (seen && seen !== APP_VERSION) setTimeout(() => changelogDialog(seen), 400);
+  else if (!seen && Object.keys(state.docs).length) setTimeout(() => changelogDialog("v4"), 400); // devices updating from before v6
+}
+
 function renderList() {
   const u = getUser();
-  renderBar(null, "ISP Abnahmeprüfung", "VDI 3814-3 · Anhang 7",
+  renderBar(null, "ISP Abnahmeprüfung", `VDI 3814-3 · Anhang 7 · ${APP_VERSION}`,
     h("div", { style: "display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end" },
       h("button", { class: "btn", id: "userbtn", title: "Benutzername festlegen", onclick: () => userDialog() }, u ? `Benutzer: ${u}` : "Benutzer festlegen"),
       state.readOnly ? null : h("button", { class: "btn primary", id: "newbtn", onclick: () => { state.view = "new"; render(); } }, "+ Neue Prüfung")));
@@ -462,7 +499,8 @@ function renderList() {
   const backupBar = h("div", { class: "toolbar", style: "margin:0 0 16px" },
     h("button", { class: "btn", onclick: exportBackup, disabled: !Object.keys(state.docs).length }, "Sicherung exportieren"),
     h("button", { class: "btn", onclick: () => fileIn.click() }, "Sicherung importieren"), fileIn,
-    h("span", { class: "note", style: "align-self:center" }, "Gespeichert nur auf diesem Gerät. Zum Übertragen Sicherung exportieren und auf dem anderen Gerät importieren."));
+    h("span", { class: "note", style: "align-self:center" }, "Gespeichert nur auf diesem Gerät. Zum Übertragen Sicherung exportieren und auf dem anderen Gerät importieren."),
+    h("button", { class: "rmbtn mono", style: "flex-basis:100%;text-align:left", onclick: () => changelogDialog() }, `App-Version ${APP_VERSION} · Änderungen anzeigen`));
 
   if (!u) main.append(h("div", { class: "banner" }, "Lege oben über „Benutzer festlegen“ deinen Namen fest. Er wird mit Zeitstempel bei jeder Antwort gespeichert."));
   if (state.view === "new") main.append(newForm());
@@ -785,20 +823,24 @@ async function buildWorkbook(p) {
 
 render();
 store.init();
+checkWhatsNew();
 
 // ---------- PWA: offline cache, protected storage, update notice ----------
 if ("serviceWorker" in navigator && location.protocol === "https:") {
-  navigator.serviceWorker.register("sw.js").then(reg => {
-    reg.addEventListener("updatefound", () => {
-      const w = reg.installing;
-      w && w.addEventListener("statechange", () => {
-        if (w.state === "installed" && navigator.serviceWorker.controller) {
-          const t = h("div", { class: "toast", role: "status" }, "Neue Version verfügbar. ",
-            h("button", { class: "btn", style: "margin-left:8px;padding:4px 10px", onclick: () => location.reload() }, "Neu laden"));
-          document.body.append(t);
-        }
-      });
-    });
+  // a new version activates itself (skipWaiting); reload once so this window shows it
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloading = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!hadController || reloading) return;
+    reloading = true;
+    const ta = document.activeElement;
+    if (ta && ta.tagName === "TEXTAREA") ta.blur(); // saves a remark being typed
+    toast("Neue Version wird geladen …");
+    setTimeout(() => location.reload(), 600);
+  });
+  navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(reg => {
+    // check for updates whenever the app comes back to the foreground
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") reg.update().catch(() => {}); });
   }).catch(() => {});
 }
 if (navigator.storage && navigator.storage.persist) {
