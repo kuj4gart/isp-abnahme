@@ -1,12 +1,12 @@
 // Offline cache for ISP Abnahmeprüfung.
 // Bump VERSION whenever any file changes so devices pick up the update.
-const VERSION = "v1";
+const VERSION = "v3";
 const CACHE = "isp-abnahme-" + VERSION;
 const FILES = [
   "./",
   "./index.html",
   "./manifest.webmanifest",
-  "./xlsx.full.min.js",
+  "./exceljs.min.js",
   "./icon-192.png",
   "./icon-512.png",
   "./icon-maskable-512.png",
